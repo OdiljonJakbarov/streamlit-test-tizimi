@@ -459,68 +459,71 @@ def _start_test(fio, group, teacher, category):
     st.rerun()
 
 # ═══════════════════════════════════════════════════════
-# PAGE: TEST
+# PAGE: TEST — faqat session_state ishlatadi
 # ═══════════════════════════════════════════════════════
 def page_test():
     st.components.v1.html(PROTECT_JS, height=0)
 
-    # Natija ko'rsatish (test tugagan)
-    if st.session_state.test_finished:
+    # Natija ko'rsatish
+    if st.session_state.get('test_finished'):
         _show_result()
         return
 
-    token = st.session_state.test_token
-    if not token:
-        st.session_state.page = 'home'; st.rerun(); return
-
-    t = db_get_active_test(token)
-    if not t:
-        # DB dan kelmadi — session dan olishga urinib ko'ramiz
-        if (st.session_state.get('test_questions') and
-            st.session_state.get('test_fio')):
-            t = {
-                'token':      token,
-                'fio':        st.session_state.test_fio,
-                'grp':        st.session_state.test_group,
-                'category':   st.session_state.test_category,
-                'questions':  st.session_state.test_questions,
-                'start_time': st.session_state.test_start_time,
-                'time_limit': st.session_state.test_time_limit,
-                'answers':    [],
-                'teacher_id': st.session_state.test_teacher_id,
-            }
-        elif st.session_state.test_result:
-            st.session_state.test_finished = True
-            _show_result()
-            return
-        else:
+    # Savollar session da bormi?
+    questions = st.session_state.get('test_questions', [])
+    if not questions:
+        st.error("Test topilmadi. Qaytadan boshlang.")
+        if st.button("🏠 Bosh sahifaga qaytish"):
             st.session_state.page = 'home'
             st.rerun()
-            return
-
-    # Vaqtni hisoblash
-    elapsed   = time.time() - float(t['start_time'])
-    remaining = int(t['time_limit'] - elapsed)
-
-    if remaining <= 0:
-        _finish_test(token, t)
         return
 
-    questions = t['questions']
-    answers   = t['answers'] if isinstance(t['answers'], list) else []
-    idx       = st.session_state.q_idx
-    total     = len(questions)
+    fio       = st.session_state.get('test_fio', '')
+    group     = st.session_state.get('test_group', '')
+    category  = st.session_state.get('test_category', '')
+    start_t   = st.session_state.get('test_start_time', time.time())
+    t_limit   = st.session_state.get('test_time_limit', 1800)
+    token     = st.session_state.get('test_token', '')
+
+    # Javoblar session da
+    if 'test_answers' not in st.session_state:
+        st.session_state.test_answers = []
+    answers = st.session_state.test_answers
+
+    # Vaqt
+    elapsed   = time.time() - float(start_t)
+    remaining = int(t_limit - elapsed)
+
+    if remaining <= 0:
+        t_data = {
+            'fio': fio, 'grp': group, 'category': category,
+            'questions': questions, 'answers': answers,
+            'start_time': start_t, 'time_limit': t_limit,
+            'teacher_id': st.session_state.get('test_teacher_id', ''),
+            'token': token
+        }
+        _finish_test(token, t_data)
+        return
+
+    idx   = st.session_state.get('q_idx', 0)
+    total = len(questions)
 
     if idx >= total:
-        _finish_test(token, t)
+        t_data = {
+            'fio': fio, 'grp': group, 'category': category,
+            'questions': questions, 'answers': answers,
+            'start_time': start_t, 'time_limit': t_limit,
+            'teacher_id': st.session_state.get('test_teacher_id', ''),
+            'token': token
+        }
+        _finish_test(token, t_data)
         return
 
     q = questions[idx]
 
     # ── HEADER ──────────────────────────────────────────
-    m = remaining // 60
-    s = remaining % 60
-    timer_color = "#c0392b" if remaining < 60 else "#1a3a6b"
+    m   = remaining // 60
+    s   = remaining % 60
     prog = int(idx / total * 100)
 
     st.markdown(f"""
@@ -528,12 +531,11 @@ def page_test():
       padding:12px 18px;border-radius:12px;margin-bottom:10px;
       display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div>
-        <div style="font-weight:700;font-size:15px;">👤 {t['fio']}</div>
-        <div style="font-size:12px;opacity:.8;">Guruh: {t['grp']} | {t['category']}</div>
+        <div style="font-weight:700;font-size:15px;">👤 {fio}</div>
+        <div style="font-size:12px;opacity:.8;">Guruh: {group} | {category}</div>
       </div>
-      <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:7px 16px;
-        font-size:20px;font-weight:800;min-width:80px;text-align:center;
-        {'animation:pulse 1s infinite;background:#c0392b;' if remaining < 60 else ''}">
+      <div style="background:{'rgba(192,57,43,0.9)' if remaining < 60 else 'rgba(255,255,255,.2)'};
+        border-radius:8px;padding:7px 16px;font-size:20px;font-weight:800;min-width:80px;text-align:center;">
         {m:02d}:{s:02d}
       </div>
     </div>
@@ -554,57 +556,56 @@ def page_test():
     # ── JAVOBLAR ────────────────────────────────────────
     LETTERS = ['A','B','C','D','E']
 
-    if not st.session_state.answered:
-        # Javob tanlanmagan — variantlarni tugma sifatida ko'rsatish
+    if not st.session_state.get('answered', False):
         for j, opt in enumerate(q['shuffled_options']):
             if st.button(f"{LETTERS[j]}) {escape_text(opt)}", key=f"opt_{idx}_{j}"):
                 correct = (opt == q['correct'])
-                answers.append({'index': idx, 'answer': opt, 'correct': correct})
-                db_update_answers(token, answers)
-                # Session da ham saqlaymiz
-                st.session_state.test_answers = answers
-                st.session_state.answered             = True
-                st.session_state.last_correct         = correct
-                st.session_state.last_correct_answer  = q['correct']
+                st.session_state.test_answers.append({
+                    'index': idx, 'answer': opt, 'correct': correct
+                })
+                st.session_state.answered            = True
+                st.session_state.last_correct        = correct
+                st.session_state.last_correct_answer = q['correct']
                 st.rerun()
 
-        # Vaqt yangilash
         st.caption(f"⏱ Qolgan vaqt: {m:02d}:{s:02d}")
-        if st.button("🔄 Vaqtni yangilash", key=f"ref_{idx}"):
+        if st.button("🔄 Yangilash", key=f"ref_{idx}"):
             st.rerun()
-
     else:
-        # Javob tanlangan — to'g'ri/noto'g'rini ko'rsatish
-        chosen = answers[-1]['answer'] if answers else None
+        chosen = st.session_state.test_answers[-1]['answer'] if st.session_state.test_answers else None
         for j, opt in enumerate(q['shuffled_options']):
-            is_correct = (opt == q['correct'])
-            is_chosen  = (opt == chosen)
-            if is_correct and is_chosen:
+            if opt == q['correct'] and opt == chosen:
                 st.success(f"✅ {LETTERS[j]}) {escape_text(opt)}")
-            elif is_correct:
+            elif opt == q['correct']:
                 st.success(f"✅ {LETTERS[j]}) {escape_text(opt)}")
-            elif is_chosen:
+            elif opt == chosen:
                 st.error(f"❌ {LETTERS[j]}) {escape_text(opt)}")
             else:
                 st.markdown(f"&nbsp;&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
 
-        # Noto'g'ri bo'lsa faqat to'g'ri javobni ko'rsat
-        if not st.session_state.last_correct:
-            st.caption(f"💡 To\'g\'ri javob: {escape_text(st.session_state.last_correct_answer)}")
-
+        if not st.session_state.get('last_correct', True):
+            st.caption(f"💡 To'g'ri javob: {escape_text(st.session_state.last_correct_answer)}")
 
         st.write("")
         btn_label = "Yakunlash ✓" if idx >= total - 1 else "Keyingisi ›"
         if st.button(btn_label, type="primary", key=f"next_{idx}"):
             if idx >= total - 1:
-                t2 = db_get_active_test(token)
-                _finish_test(token, t2 or t)
+                t_data = {
+                    'fio': fio, 'grp': group, 'category': category,
+                    'questions': questions,
+                    'answers': st.session_state.test_answers,
+                    'start_time': start_t, 'time_limit': t_limit,
+                    'teacher_id': st.session_state.get('test_teacher_id', ''),
+                    'token': token
+                }
+                _finish_test(token, t_data)
             else:
-                st.session_state.q_idx    += 1
-                st.session_state.answered  = False
+                st.session_state.q_idx   += 1
+                st.session_state.answered = False
                 st.session_state.last_correct = None
                 st.session_state.last_correct_answer = None
                 st.rerun()
+
 
 def _finish_test(token, t):
     answers = t['answers'] if isinstance(t['answers'], list) else json.loads(t['answers'])
