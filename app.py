@@ -544,10 +544,10 @@ def page_test():
             else:
                 st.markdown(f"&nbsp;&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
 
-        if st.session_state.last_correct:
-            st.info("✅ To'g'ri javob!")
-        else:
-            st.warning(f"❌ Noto'g'ri! To'g'ri javob: **{escape_text(st.session_state.last_correct_answer)}**")
+        # Noto'g'ri bo'lsa faqat to'g'ri javobni ko'rsat
+        if not st.session_state.last_correct:
+            st.caption(f"💡 To\'g\'ri javob: {escape_text(st.session_state.last_correct_answer)}")
+
 
         st.write("")
         btn_label = "Yakunlash ✓" if idx >= total - 1 else "Keyingisi ›"
