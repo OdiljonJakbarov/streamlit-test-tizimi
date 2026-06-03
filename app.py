@@ -191,7 +191,9 @@ def db_save_active_test(token, data):
     try:
         sb().table('active_tests').upsert(data).execute()
         return True
-    except: return False
+    except Exception as e:
+        print(f"db_save_active_test xato: {e}")
+        return False
 
 def db_get_active_test(token):
     try:
@@ -428,15 +430,32 @@ def _start_test(fio, group, teacher, category):
         'start_time': now, 'time_limit': t_limit * 60,
         'answers': '[]', 'created_at': now, 'teacher_id': tid
     }
-    db_save_active_test(token, data)
-    st.session_state.test_token      = token
-    st.session_state.q_idx           = 0
-    st.session_state.answered        = False
-    st.session_state.last_correct    = None
-    st.session_state.last_correct_answer = None
-    st.session_state.test_finished   = False
-    st.session_state.test_result     = None
-    st.session_state.page            = 'test'
+    if not questions:
+        st.error("❌ Savollar topilmadi! Test faylini tekshiring.")
+        return
+
+    # Savollarni session_state ga saqlaymiz (DB ga ham)
+    saved = db_save_active_test(token, data)
+    if not saved:
+        st.error("❌ Test saqlanmadi! Qaytadan urinib ko'ring.")
+        return
+
+    st.session_state.test_token           = token
+    st.session_state.q_idx                = 0
+    st.session_state.answered             = False
+    st.session_state.last_correct         = None
+    st.session_state.last_correct_answer  = None
+    st.session_state.test_finished        = False
+    st.session_state.test_result          = None
+    # Savollarni ham session da saqlaymiz — DB muammo bo'lsa ishlatamiz
+    st.session_state.test_questions       = questions
+    st.session_state.test_fio             = fio
+    st.session_state.test_group           = group
+    st.session_state.test_category        = category
+    st.session_state.test_start_time      = now
+    st.session_state.test_time_limit      = t_limit * 60
+    st.session_state.test_teacher_id      = tid
+    st.session_state.page                 = 'test'
     st.rerun()
 
 # ═══════════════════════════════════════════════════════
@@ -456,14 +475,28 @@ def page_test():
 
     t = db_get_active_test(token)
     if not t:
-        # Token yo'q — lekin natija session da saqlanganmi?
-        if st.session_state.test_result:
+        # DB dan kelmadi — session dan olishga urinib ko'ramiz
+        if (st.session_state.get('test_questions') and
+            st.session_state.get('test_fio')):
+            t = {
+                'token':      token,
+                'fio':        st.session_state.test_fio,
+                'grp':        st.session_state.test_group,
+                'category':   st.session_state.test_category,
+                'questions':  st.session_state.test_questions,
+                'start_time': st.session_state.test_start_time,
+                'time_limit': st.session_state.test_time_limit,
+                'answers':    [],
+                'teacher_id': st.session_state.test_teacher_id,
+            }
+        elif st.session_state.test_result:
             st.session_state.test_finished = True
             _show_result()
+            return
         else:
             st.session_state.page = 'home'
             st.rerun()
-        return
+            return
 
     # Vaqtni hisoblash
     elapsed   = time.time() - float(t['start_time'])
@@ -528,6 +561,8 @@ def page_test():
                 correct = (opt == q['correct'])
                 answers.append({'index': idx, 'answer': opt, 'correct': correct})
                 db_update_answers(token, answers)
+                # Session da ham saqlaymiz
+                st.session_state.test_answers = answers
                 st.session_state.answered             = True
                 st.session_state.last_correct         = correct
                 st.session_state.last_correct_answer  = q['correct']
@@ -573,6 +608,9 @@ def page_test():
 
 def _finish_test(token, t):
     answers = t['answers'] if isinstance(t['answers'], list) else json.loads(t['answers'])
+    # Session dan ham olishga urinish (DB dan to'liq kelmagan bo'lsa)
+    if not answers and st.session_state.get('test_answers'):
+        answers = st.session_state.test_answers
     total   = len(t['questions'])
     correct = sum(1 for a in answers if a['correct'])
     pct     = round(correct / total * 100, 1) if total > 0 else 0
