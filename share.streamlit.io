@@ -1,0 +1,2 @@
+SUPABASE_URL = "https://lcfudylotwvlqnfphctt.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjZnVkeWxvdHd2bHFuZnBoY3R0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTYxMzgsImV4cCI6MjA5NTk3MjEzOH0.Vp8CA_lg05w9J2JfYBxzDwi9UAeW6moFV5mpnTqhGtU"
