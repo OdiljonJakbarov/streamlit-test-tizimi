@@ -124,9 +124,16 @@ def db_get_teacher_by_username(username):
 
 def db_save_teacher(t):
     try:
-        sb().table('teachers').upsert(t).execute()
+        # Bazaga yuborishdan oldin tiplarni to'g'rilash
+        data = dict(t)
+        data['time_limit']     = int(data.get('time_limit', 30))
+        data['question_count'] = int(data.get('question_count', 10))
+        data['is_active']      = int(data.get('is_active', 1))
+        sb().table('teachers').upsert(data).execute()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"Saqlash xatosi: {e}")
+        return False
 
 def db_delete_teacher(tid):
     try:
@@ -380,8 +387,10 @@ def _start_test(fio, group, teacher, category):
     tid = teacher['id']
     cats_raw = db_get_test_files(tid)
     cats_map = {f['name']: f for f in cats_raw}
-    q_count = int(teacher.get('question_count', 10))
-    t_limit = int(teacher.get('time_limit', 30))
+    # DB dan yangi sozlamalarni olish
+    fresh_teacher = db_get_teacher(tid) or teacher
+    t_limit = int(fresh_teacher.get('time_limit', 30))
+    q_count = int(fresh_teacher.get('question_count', 10))
     questions = []
 
     if category == 'YaN':
@@ -709,11 +718,13 @@ def page_teacher_dashboard():
         with c1: tl = st.number_input("⏱ Vaqt limiti (daqiqa)", min_value=1, max_value=300, value=int(teacher.get('time_limit',30)))
         with c2: qc = st.number_input("📋 Savollar soni", min_value=1, max_value=200, value=int(teacher.get('question_count',10)))
         if st.button("💾 Saqlash", type="primary"):
-            teacher['time_limit'] = tl; teacher['question_count'] = qc
+            teacher['time_limit']     = int(tl)
+            teacher['question_count'] = int(qc)
             if db_save_teacher(teacher):
-                st.success("✅ Sozlamalar saqlandi!")
+                st.success(f"✅ Saqlandi! Vaqt: {tl} daqiqa, Savollar: {qc} ta")
+                st.rerun()
             else:
-                st.error("❌ Xatolik!")
+                st.error("❌ Saqlashda xatolik!")
 
     # ── TEST FAYLLAR ──
     with tab2:
