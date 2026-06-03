@@ -507,21 +507,13 @@ def page_test():
                 st.session_state.last_correct_answer = q['correct']
                 st.rerun()
     else:
-        # Natija ko'rsatish
+        # Izohsiz — faqat tanlangan javobni belgilash
+        chosen = answers[-1]['answer'] if answers else None
         for j, opt in enumerate(q['shuffled_options']):
-            is_correct_opt = (opt == q['correct'])
-            is_chosen      = (opt == answers[-1]['answer']) if answers else False
-            if is_correct_opt:
-                st.success(f"✅ {LETTERS[j]}) {escape_text(opt)}")
-            elif is_chosen and not st.session_state.last_correct:
-                st.error(f"❌ {LETTERS[j]}) {escape_text(opt)}")
+            if opt == chosen:
+                st.markdown(f"**→ {LETTERS[j]}) {escape_text(opt)}**")
             else:
-                st.markdown(f"&nbsp;&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
-
-        if st.session_state.last_correct:
-            st.success("✅ To'g'ri javob!")
-        else:
-            st.error(f"❌ Noto'g'ri! To'g'ri javob: **{escape_text(st.session_state.last_correct_answer)}**")
+                st.markdown(f"&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
 
         st.divider()
         btn_label = "Yakunlash ✓" if idx >= total - 1 else "Keyingisi ›"
@@ -535,10 +527,11 @@ def page_test():
                 st.session_state.last_correct = None
                 st.rerun()
 
-    # Vaqt tugaguncha avtomatik yangilanish
+    # Sahifa yangilanishi faqat tugma bosilganda
+    # (time.sleep va avtomatik rerun olib tashlandi - session muammosini oldini olish uchun)
     if not st.session_state.answered:
-        time.sleep(1)
-        st.rerun()
+        if st.button("🔄 Vaqtni yangilash", key=f"refresh_{idx}"):
+            st.rerun()
 
 def _finish_test(token, t):
     answers = t['answers'] if isinstance(t['answers'], list) else json.loads(t['answers'])
