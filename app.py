@@ -434,22 +434,30 @@ def _start_test(fio, group, teacher, category):
 # PAGE: TEST
 # ═══════════════════════════════════════════════════════
 def page_test():
-    # Screenshot himoya
     st.components.v1.html(PROTECT_JS, height=0)
 
-    token = st.session_state.test_token
-    if not token:
-        st.error("Test topilmadi!"); return
-
-    t = db_get_active_test(token)
-    if not t:
-        st.error("Test topilmadi!"); return
-
+    # Natija ko'rsatish (test tugagan)
     if st.session_state.test_finished:
         _show_result()
         return
 
-    elapsed  = time.time() - t['start_time']
+    token = st.session_state.test_token
+    if not token:
+        st.session_state.page = 'home'; st.rerun(); return
+
+    t = db_get_active_test(token)
+    if not t:
+        # Token yo'q — lekin natija session da saqlanganmi?
+        if st.session_state.test_result:
+            st.session_state.test_finished = True
+            _show_result()
+        else:
+            st.session_state.page = 'home'
+            st.rerun()
+        return
+
+    # Vaqtni hisoblash
+    elapsed   = time.time() - float(t['start_time'])
     remaining = int(t['time_limit'] - elapsed)
 
     if remaining <= 0:
@@ -457,7 +465,7 @@ def page_test():
         return
 
     questions = t['questions']
-    answers   = t['answers']
+    answers   = t['answers'] if isinstance(t['answers'], list) else []
     idx       = st.session_state.q_idx
     total     = len(questions)
 
@@ -467,26 +475,33 @@ def page_test():
 
     q = questions[idx]
 
-    # Header
+    # ── HEADER ──────────────────────────────────────────
     m = remaining // 60
     s = remaining % 60
-    timer_class = "timer-warn" if remaining < 60 else "timer-ok"
+    timer_color = "#c0392b" if remaining < 60 else "#1a3a6b"
     prog = int(idx / total * 100)
 
     st.markdown(f"""
-    <div style="background:linear-gradient(135deg,#1a3a6b,#2563b0);color:white;padding:12px 18px;border-radius:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    <div style="background:linear-gradient(135deg,#1a3a6b,#2563b0);color:white;
+      padding:12px 18px;border-radius:12px;margin-bottom:10px;
+      display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div>
         <div style="font-weight:700;font-size:15px;">👤 {t['fio']}</div>
         <div style="font-size:12px;opacity:.8;">Guruh: {t['grp']} | {t['category']}</div>
       </div>
-      <div class="{timer_class}">{m:02d}:{s:02d}</div>
+      <div style="background:rgba(255,255,255,.2);border-radius:8px;padding:7px 16px;
+        font-size:20px;font-weight:800;min-width:80px;text-align:center;
+        {'animation:pulse 1s infinite;background:#c0392b;' if remaining < 60 else ''}">
+        {m:02d}:{s:02d}
+      </div>
     </div>
-    <div style="background:#e0e0e0;height:6px;border-radius:3px;margin-bottom:14px;">
-      <div style="background:linear-gradient(90deg,#1a3a6b,#2563b0);height:6px;border-radius:3px;width:{prog}%;transition:width .3s;"></div>
+    <div style="background:#dde;height:6px;border-radius:3px;margin-bottom:14px;">
+      <div style="background:linear-gradient(90deg,#1a3a6b,#2563b0);
+        height:6px;border-radius:3px;width:{prog}%;"></div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Savol
+    # ── SAVOL ───────────────────────────────────────────
     st.markdown(f"""
     <div class="q-box">
       <div class="q-num">SAVOL {idx+1} / {total}</div>
@@ -494,44 +509,58 @@ def page_test():
     </div>
     """, unsafe_allow_html=True)
 
-    # Javob variantlari
+    # ── JAVOBLAR ────────────────────────────────────────
     LETTERS = ['A','B','C','D','E']
+
     if not st.session_state.answered:
+        # Javob tanlanmagan — variantlarni tugma sifatida ko'rsatish
         for j, opt in enumerate(q['shuffled_options']):
             if st.button(f"{LETTERS[j]}) {escape_text(opt)}", key=f"opt_{idx}_{j}"):
                 correct = (opt == q['correct'])
                 answers.append({'index': idx, 'answer': opt, 'correct': correct})
                 db_update_answers(token, answers)
-                st.session_state.answered         = True
-                st.session_state.last_correct     = correct
-                st.session_state.last_correct_answer = q['correct']
+                st.session_state.answered             = True
+                st.session_state.last_correct         = correct
+                st.session_state.last_correct_answer  = q['correct']
                 st.rerun()
+
+        # Vaqt yangilash
+        st.caption(f"⏱ Qolgan vaqt: {m:02d}:{s:02d}")
+        if st.button("🔄 Vaqtni yangilash", key=f"ref_{idx}"):
+            st.rerun()
+
     else:
-        # Izohsiz — faqat tanlangan javobni belgilash
+        # Javob tanlangan — to'g'ri/noto'g'rini ko'rsatish
         chosen = answers[-1]['answer'] if answers else None
         for j, opt in enumerate(q['shuffled_options']):
-            if opt == chosen:
-                st.markdown(f"**→ {LETTERS[j]}) {escape_text(opt)}**")
+            is_correct = (opt == q['correct'])
+            is_chosen  = (opt == chosen)
+            if is_correct and is_chosen:
+                st.success(f"✅ {LETTERS[j]}) {escape_text(opt)}")
+            elif is_correct:
+                st.success(f"✅ {LETTERS[j]}) {escape_text(opt)}")
+            elif is_chosen:
+                st.error(f"❌ {LETTERS[j]}) {escape_text(opt)}")
             else:
-                st.markdown(f"&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
+                st.markdown(f"&nbsp;&nbsp;&nbsp;{LETTERS[j]}) {escape_text(opt)}")
 
-        st.divider()
+        if st.session_state.last_correct:
+            st.info("✅ To'g'ri javob!")
+        else:
+            st.warning(f"❌ Noto'g'ri! To'g'ri javob: **{escape_text(st.session_state.last_correct_answer)}**")
+
+        st.write("")
         btn_label = "Yakunlash ✓" if idx >= total - 1 else "Keyingisi ›"
-        if st.button(btn_label, type="primary"):
+        if st.button(btn_label, type="primary", key=f"next_{idx}"):
             if idx >= total - 1:
                 t2 = db_get_active_test(token)
                 _finish_test(token, t2 or t)
             else:
-                st.session_state.q_idx   += 1
-                st.session_state.answered = False
+                st.session_state.q_idx    += 1
+                st.session_state.answered  = False
                 st.session_state.last_correct = None
+                st.session_state.last_correct_answer = None
                 st.rerun()
-
-    # Sahifa yangilanishi faqat tugma bosilganda
-    # (time.sleep va avtomatik rerun olib tashlandi - session muammosini oldini olish uchun)
-    if not st.session_state.answered:
-        if st.button("🔄 Vaqtni yangilash", key=f"refresh_{idx}"):
-            st.rerun()
 
 def _finish_test(token, t):
     answers = t['answers'] if isinstance(t['answers'], list) else json.loads(t['answers'])
